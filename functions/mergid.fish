@@ -162,7 +162,7 @@ function mergid --description "Merge audio tracks from two video files into one"
                 echo "Warning: auto-sync failed, using no delay." >&2
             else
                 set delay $_sync_output
-                echo "  Detected offset: ${delay}s"
+                echo "  Detected offset: "$delay"s"
             end
         end
     end
@@ -175,7 +175,7 @@ function mergid --description "Merge audio tracks from two video files into one"
     end
     echo "  [$merge_lang] $merge"
     if test "$delay" != 0
-        echo "  Delay: ${delay}s"
+        echo "  Delay: "$delay"s"
     end
     echo "→ $outfile"
     echo
