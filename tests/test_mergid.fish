@@ -93,6 +93,18 @@ assert "und → und"         und        (_mergid_lang_title und)
 assert "xx → xx"           xx         (_mergid_lang_title xx)
 
 echo
+echo "=== _mergid_lang_iso639_2 ==="
+
+assert "en → eng"     eng  (_mergid_lang_iso639_2 en)
+assert "de → deu"     deu  (_mergid_lang_iso639_2 de)
+assert "fr → fra"     fra  (_mergid_lang_iso639_2 fr)
+assert "es → spa"     spa  (_mergid_lang_iso639_2 es)
+assert "ja → jpn"     jpn  (_mergid_lang_iso639_2 ja)
+assert "zh → zho"     zho  (_mergid_lang_iso639_2 zh)
+assert "und → und"    und  (_mergid_lang_iso639_2 und)
+assert "xx → xx"      xx   (_mergid_lang_iso639_2 xx)
+
+echo
 echo "=== Results ==="
 echo "$pass passed, $fail failed"
 

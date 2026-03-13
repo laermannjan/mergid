@@ -205,9 +205,12 @@ function mergid --description "Merge audio tracks from two video files into one"
     end
 
     # Set language and title metadata on all audio streams
+    # handler_name is used because MP4 doesn't support freeform title tags
+    # language uses ISO 639-2/T (3-letter) codes for MP4 compatibility
     for i in (seq (count $all_langs))
-        set -a ff_args -metadata:s:a:(math $i - 1) language=$all_langs[$i]
+        set -a ff_args -metadata:s:a:(math $i - 1) language=(_mergid_lang_iso639_2 $all_langs[$i])
         set -a ff_args -metadata:s:a:(math $i - 1) title=(_mergid_lang_title $all_langs[$i])
+        set -a ff_args -metadata:s:a:(math $i - 1) handler_name=(_mergid_lang_title $all_langs[$i])
     end
 
     # Use temp file to avoid corruption
