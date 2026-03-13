@@ -97,10 +97,12 @@ function mergid --description "Merge audio tracks from two video files into one"
             end
         end
     else
-        set base_langs (_mergid_probe_langs "$base")
-        # If single stream with no metadata, detect from filename
-        if test (count $base_langs) -eq 1 -a "$base_langs[1]" = und
-            set base_langs (_mergid_detect_lang "$base")
+        # Prefer filename detection over ffprobe metadata
+        set -l detected (_mergid_detect_lang "$base")
+        if test "$detected" != und
+            set base_langs $detected
+        else
+            set base_langs (_mergid_probe_langs "$base")
         end
     end
 
