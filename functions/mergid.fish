@@ -1,121 +1,144 @@
-function mergid --description "Merge audio tracks from multiple video files into one"
-    # Requires: ffmpeg
+function mergid --description "Merge audio tracks from two video files into one"
+    # Requires: ffmpeg, ffprobe, python3 (for auto-sync)
 
-    argparse 'l/languages=' 'o/output=' 'h/help' -- $argv
+    argparse 'b/lang-base=' 'm/lang-merge=' 'd/delay=' 'S/no-sync' \
+        'o/output=' 'h/help' -- $argv
     or return 1
 
     if set -q _flag_help
-        echo "mergid — merge audio tracks from multiple video files into one."
+        echo "mergid — merge an audio track from one video file onto another."
         echo
-        echo "Takes two or more video files that share the same video content but"
-        echo "have different audio languages, and combines their audio tracks into"
-        echo "a single file. The video stream is copied from the first file."
+        echo "Takes a base video file and a merge video file that share the same"
+        echo "video content but have different audio languages, and adds the merge"
+        echo "file's audio track to the base file. The video stream and any existing"
+        echo "audio streams are kept from the base file."
         echo
-        echo "Usage: mergid [OPTIONS] FILE1 FILE2 [FILE3 ...]"
+        echo "Usage: mergid [OPTIONS] BASE MERGE"
         echo
         echo "Options:"
-        echo "  -l, --languages   Comma-separated language codes (e.g. de,en)"
-        echo "  -o, --output      Output filename (default: replaces first input file)"
+        echo "  -b, --lang-base   Language code for base file's audio"
+        echo "  -m, --lang-merge  Language code for merge file's audio"
+        echo "  -d, --delay       Delay merge audio by N seconds (e.g. 1.5 or -0.5)"
+        echo "  -S, --no-sync     Disable auto audio sync detection"
+        echo "  -o, --output      Output filename (default: replaces base file)"
         echo "  -h, --help        Show this help"
         echo
+        echo "Audio sync:"
+        echo "  By default, mergid auto-detects the audio offset between the base"
+        echo "  and merge files by cross-correlating the first 10 seconds of audio."
+        echo "  This works well when both files share a common intro jingle."
+        echo "  Use --no-sync to disable. --delay overrides auto-sync."
+        echo "  Requires python3."
+        echo
         echo "Language detection:"
-        echo "  mergid tries to detect the language of each file from a suffix in"
-        echo "  the filename, right before the extension. For example:"
+        echo "  Languages are resolved in this order:"
+        echo "    Base:  --lang-base flag → ffprobe metadata → filename suffix"
+        echo "    Merge: --lang-merge flag → filename suffix"
         echo
-        echo "    Talk - S2026E01 - Speaker - Title.de.mp4  → de"
-        echo "    Talk - S2026E01 - Speaker - Title.en.mp4  → en"
+        echo "  Recognized filename suffixes: en, de, fr, es, it, pt, ja, zh, ko, ru, nl, pl"
+        echo "  (and common variants like eng, deu, ger, deutsch, etc.)"
         echo
-        echo "  Recognized suffixes include common language codes and names:"
-        echo "    en, eng, english → en"
-        echo "    de, deu, ger, german, deutsch → de"
-        echo "    fr, fra, fre, french → fr"
-        echo "    es, spa, spanish → es"
-        echo "    it, ita, italian → it"
-        echo "    pt, por, portuguese → pt"
-        echo "    ja, jpn, japanese → ja"
-        echo "    zh, zho, chi, chinese → zh"
-        echo "    ko, kor, korean → ko"
-        echo "    ru, rus, russian → ru"
-        echo "    nl, nld, dut, dutch → nl"
-        echo "    pl, pol, polish → pl"
-        echo
-        echo "  If no suffix is detected, use --languages to assign them manually."
-        echo "  The --languages flag always takes precedence over auto-detection."
+        echo "Chaining merges:"
+        echo "  To merge more than two languages, chain calls:"
+        echo "    mergid -o merged.mp4 video.de.mp4 video.en.mp4"
+        echo "    mergid merged.mp4 video.fr.mp4"
         echo
         echo "Examples:"
         echo "  mergid video.de.mp4 video.en.mp4"
-        echo "  mergid -l de,en video_german.mp4 video_english.mp4"
+        echo "  mergid -b de -m en german.mp4 english.mp4"
+        echo "  mergid -d 1.5 video.de.mp4 video.en.mp4"
+        echo "  mergid --no-sync video.de.mp4 video.en.mp4"
         echo "  mergid -o merged.mp4 video.de.mp4 video.en.mp4"
         return 0
     end
 
     # --- Validate inputs ---
-    if test (count $argv) -lt 2
-        echo "Error: need at least two input files." >&2
+    if test (count $argv) -ne 2
+        echo "Error: need exactly two input files (base and merge)." >&2
         echo "Run with --help for usage." >&2
         return 1
     end
 
-    # --- Check ffmpeg ---
     if not command -q ffmpeg
         echo "Error: ffmpeg is required but not found." >&2
         return 1
     end
 
-    # --- Check files exist ---
-    for file in $argv
+    if not command -q ffprobe
+        echo "Error: ffprobe is required but not found." >&2
+        return 1
+    end
+
+    set -l base $argv[1]
+    set -l merge $argv[2]
+
+    for file in $base $merge
         if not test -f "$file"
             echo "Error: file not found: $file" >&2
             return 1
         end
     end
 
-    # --- Resolve languages ---
-    set -l files $argv
-    set -l langs
+    # --- Resolve base languages ---
+    set -l base_langs
 
-    if set -q _flag_languages
-        set langs (string split ',' "$_flag_languages")
-        if test (count $langs) -ne (count $files)
-            echo "Error: number of languages ("(count $langs)") doesn't match number of files ("(count $files)")." >&2
-            return 1
-        end
-        # Normalize provided languages (pass through unknown codes as-is)
-        set -l normalized
-        for lang in $langs
-            set -l n (_mergid_normalize_lang "$lang")
+    if set -q _flag_lang_base
+        # Manual override — only for single-stream base files
+        set -l probed (_mergid_probe_langs "$base")
+        if test (count $probed) -gt 1
+            echo "Warning: --lang-base ignored for multi-stream base file." >&2
+            set base_langs $probed
+        else
+            set -l n (_mergid_normalize_lang "$_flag_lang_base")
             if test -n "$n"
-                set -a normalized $n
+                set base_langs $n
             else
-                set -a normalized (string lower -- $lang)
+                set base_langs (string lower -- $_flag_lang_base)
             end
         end
-        set langs $normalized
     else
-        for file in $files
-            set -a langs (_mergid_detect_lang "$file")
+        set base_langs (_mergid_probe_langs "$base")
+        # If single stream with no metadata, detect from filename
+        if test (count $base_langs) -eq 1 -a "$base_langs[1]" = und
+            set base_langs (_mergid_detect_lang "$base")
         end
     end
+
+    # --- Resolve merge language ---
+    set -l merge_lang
+
+    if set -q _flag_lang_merge
+        set -l n (_mergid_normalize_lang "$_flag_lang_merge")
+        if test -n "$n"
+            set merge_lang $n
+        else
+            set merge_lang (string lower -- $_flag_lang_merge)
+        end
+    else
+        set merge_lang (_mergid_detect_lang "$merge")
+    end
+
+    # --- All languages (base streams + merge stream) ---
+    set -l all_langs $base_langs $merge_lang
 
     # --- Determine output file ---
     set -l outfile
     if set -q _flag_output
         set outfile "$_flag_output"
     else
-        # Strip language suffix from first file for the output name
-        set -l base (path change-extension '' -- $files[1])
-        set -l inner_ext (path extension -- $base | string trim --chars '.')
+        set -l base_path (path change-extension '' -- $base)
+        set -l inner_ext (path extension -- $base_path | string trim --chars '.')
         if test -n "$inner_ext"
-            set -l detected (_mergid_detect_lang "$files[1]")
+            set -l detected (_mergid_detect_lang "$base")
             if test "$detected" != und
-                set base (path change-extension '' -- $base)
+                set base_path (path change-extension '' -- $base_path)
             end
         end
-        set outfile "$base"(path extension -- $files[1])
+        set outfile "$base_path"(path extension -- $base)
     end
 
     # --- Guard against overwriting input ---
-    for file in $files
+    for file in $base $merge
         if test (path resolve -- "$file") = (path resolve -- "$outfile")
             echo "Error: output '$outfile' would overwrite input '$file'." >&2
             echo "Use -o to specify a different output filename." >&2
@@ -123,11 +146,36 @@ function mergid --description "Merge audio tracks from multiple video files into
         end
     end
 
+    # --- Determine delay ---
+    set -l delay 0
+
+    if set -q _flag_delay
+        set delay $_flag_delay
+    else if not set -q _flag_no_sync
+        if not command -q python3
+            echo "Warning: python3 not found, skipping auto-sync." >&2
+        else
+            echo "Detecting audio offset..."
+            set -l _sync_output (_mergid_detect_sync "$base" "$merge")
+            set -l _sync_status $status
+            if test $_sync_status -ne 0
+                echo "Warning: auto-sync failed, using no delay." >&2
+            else
+                set delay $_sync_output
+                echo "  Detected offset: ${delay}s"
+            end
+        end
+    end
+
     # --- Show plan ---
     echo
     echo "Merging audio tracks:"
-    for i in (seq (count $files))
-        echo "  [$langs[$i]] $files[$i]"
+    for i in (seq (count $base_langs))
+        echo "  [$base_langs[$i]] $base (stream $i)"
+    end
+    echo "  [$merge_lang] $merge"
+    if test "$delay" != 0
+        echo "  Delay: ${delay}s"
     end
     echo "→ $outfile"
     echo
@@ -135,29 +183,33 @@ function mergid --description "Merge audio tracks from multiple video files into
     # --- Build ffmpeg command ---
     set -l ff_args -y
 
-    for file in $files
-        set -a ff_args -i "$file"
+    # Input files (with optional delay on merge)
+    set -a ff_args -i "$base"
+    if test "$delay" != 0
+        set -a ff_args -itsoffset "$delay"
     end
+    set -a ff_args -i "$merge"
 
-    # Map video and subtitles from first file
-    set -a ff_args -map 0:v -map 0:s?
-
-    # Map first audio stream from each file
-    for i in (seq (count $files))
-        set -a ff_args -map (math $i - 1):a:0
-    end
+    # Map video and subtitles from base, all audio from base, first audio from merge
+    set -a ff_args -map 0:v -map 0:s? -map 0:a -map 1:a:0
 
     # Copy streams without re-encoding
     set -a ff_args -c copy
 
-    # Tag language metadata on each audio stream
-    for i in (seq (count $files))
-        set -a ff_args -metadata:s:a:(math $i - 1) language=$langs[$i]
+    # Set disposition: first audio is default, rest are not
+    set -a ff_args -disposition:a:0 default
+    for i in (seq 2 (count $all_langs))
+        set -a ff_args -disposition:a:(math $i - 1) 0
     end
 
-    # Use temp file to avoid overwriting input
-    set -l tmpfile (path change-extension '' -- $outfile)".tmp"(path extension -- $outfile)
+    # Set language and title metadata on all audio streams
+    for i in (seq (count $all_langs))
+        set -a ff_args -metadata:s:a:(math $i - 1) language=$all_langs[$i]
+        set -a ff_args -metadata:s:a:(math $i - 1) title=(_mergid_lang_title $all_langs[$i])
+    end
 
+    # Use temp file to avoid corruption
+    set -l tmpfile (path change-extension '' -- $outfile)".tmp"(path extension -- $outfile)
     set -a ff_args "$tmpfile"
 
     ffmpeg $ff_args
