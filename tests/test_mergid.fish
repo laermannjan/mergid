@@ -18,9 +18,11 @@ function assert --argument-names description expected actual
     end
 end
 
-# Load helper functions
-source (status dirname)/../functions/_mergid_normalize_lang.fish
-source (status dirname)/../functions/_mergid_detect_lang.fish
+# Load all functions (also validates syntax)
+set -l funcdir (status dirname)/../functions
+for f in $funcdir/*.fish
+    source $f
+end
 
 echo "=== _mergid_normalize_lang ==="
 
@@ -71,8 +73,6 @@ assert "video.mp4 → und"         und  (_mergid_detect_lang video.mp4)
 
 # No extension at all
 assert "video → und"             und  (_mergid_detect_lang video)
-
-source (status dirname)/../functions/_mergid_lang_title.fish
 
 echo
 echo "=== _mergid_lang_title ==="
