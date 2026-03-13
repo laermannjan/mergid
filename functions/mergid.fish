@@ -63,6 +63,7 @@ function mergid --description "Merge audio tracks from multiple video files into
     end
 
     # --- Language code normalizer ---
+    # Returns normalized 2-letter code, or empty string if not recognized
     function _mergid_normalize_lang
         switch (string lower -- $argv[1])
             case en eng english
@@ -89,18 +90,21 @@ function mergid --description "Merge audio tracks from multiple video files into
                 echo nl
             case pl pol polish
                 echo pl
-            case '*'
-                echo $argv[1]
         end
     end
 
     # --- Detect language from filename suffix ---
-    # e.g. "video.en.mp4" → "en", "video.deu.mp4" → "deu"
+    # e.g. "video.en.mp4" → "en", "video.720p.mp4" → "und"
     function _mergid_detect_lang
         set -l basename (path change-extension '' -- $argv[1])
         set -l ext (path extension -- $basename | string trim --chars '.')
         if test -n "$ext"
-            _mergid_normalize_lang "$ext"
+            set -l normalized (_mergid_normalize_lang "$ext")
+            if test -n "$normalized"
+                echo $normalized
+            else
+                echo und
+            end
         else
             echo und
         end
@@ -116,10 +120,15 @@ function mergid --description "Merge audio tracks from multiple video files into
             echo "Error: number of languages ("(count $langs)") doesn't match number of files ("(count $files)")." >&2
             return 1
         end
-        # Normalize provided languages
+        # Normalize provided languages (pass through unknown codes as-is)
         set -l normalized
         for lang in $langs
-            set -a normalized (_mergid_normalize_lang "$lang")
+            set -l n (_mergid_normalize_lang "$lang")
+            if test -n "$n"
+                set -a normalized $n
+            else
+                set -a normalized (string lower -- $lang)
+            end
         end
         set langs $normalized
     else
@@ -136,10 +145,11 @@ function mergid --description "Merge audio tracks from multiple video files into
         # Strip language suffix from first file for the output name
         set -l base (path change-extension '' -- $files[1])
         set -l inner_ext (path extension -- $base | string trim --chars '.')
-        set -l normalized (_mergid_normalize_lang "$inner_ext" 2>/dev/null)
-        if test -n "$inner_ext"; and test "$normalized" != "$inner_ext" -o "$normalized" = "$inner_ext"
-            # Has a language suffix — strip it
-            set base (path change-extension '' -- $base)
+        if test -n "$inner_ext"
+            set -l detected (_mergid_detect_lang "$files[1]")
+            if test "$detected" != und
+                set base (path change-extension '' -- $base)
+            end
         end
         set outfile "$base.mp4"
     end
