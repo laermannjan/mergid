@@ -3,28 +3,24 @@
 # Simple test runner for mergid helper functions
 # Run: fish tests/test_mergid.fish
 
-set -l pass 0
-set -l fail 0
+set -g pass 0
+set -g fail 0
 
 function assert --argument-names description expected actual
     if test "$expected" = "$actual"
-        set pass (math $pass + 1)
+        set -g pass (math $pass + 1)
         echo "  ✓ $description"
     else
-        set fail (math $fail + 1)
+        set -g fail (math $fail + 1)
         echo "  ✗ $description"
         echo "    expected: '$expected'"
         echo "    got:      '$actual'"
     end
 end
 
-# Load the function so helpers are defined
-source (status dirname)/../functions/mergid.fish
-
-# We need to define the helpers by calling mergid --help (which defines them as side effect)
-# Actually, fish defines inner functions when the outer function runs.
-# Let's call mergid --help to trigger the inner function definitions.
-mergid --help >/dev/null 2>&1
+# Load helper functions
+source (status dirname)/../functions/_mergid_normalize_lang.fish
+source (status dirname)/../functions/_mergid_detect_lang.fish
 
 echo "=== _mergid_normalize_lang ==="
 

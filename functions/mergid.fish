@@ -62,51 +62,11 @@ function mergid --description "Merge audio tracks from multiple video files into
         return 1
     end
 
-    # --- Language code normalizer ---
-    # Returns normalized 2-letter code, or empty string if not recognized
-    function _mergid_normalize_lang
-        switch (string lower -- $argv[1])
-            case en eng english
-                echo en
-            case de deu ger german deutsch
-                echo de
-            case fr fra fre french
-                echo fr
-            case es spa spanish
-                echo es
-            case it ita italian
-                echo it
-            case pt por portuguese
-                echo pt
-            case ja jpn japanese
-                echo ja
-            case zh zho chi chinese
-                echo zh
-            case ko kor korean
-                echo ko
-            case ru rus russian
-                echo ru
-            case nl nld dut dutch
-                echo nl
-            case pl pol polish
-                echo pl
-        end
-    end
-
-    # --- Detect language from filename suffix ---
-    # e.g. "video.en.mp4" → "en", "video.720p.mp4" → "und"
-    function _mergid_detect_lang
-        set -l basename (path change-extension '' -- $argv[1])
-        set -l ext (path extension -- $basename | string trim --chars '.')
-        if test -n "$ext"
-            set -l normalized (_mergid_normalize_lang "$ext")
-            if test -n "$normalized"
-                echo $normalized
-            else
-                echo und
-            end
-        else
-            echo und
+    # --- Check files exist ---
+    for file in $argv
+        if not test -f "$file"
+            echo "Error: file not found: $file" >&2
+            return 1
         end
     end
 
@@ -151,7 +111,16 @@ function mergid --description "Merge audio tracks from multiple video files into
                 set base (path change-extension '' -- $base)
             end
         end
-        set outfile "$base.mp4"
+        set outfile "$base"(path extension -- $files[1])
+    end
+
+    # --- Guard against overwriting input ---
+    for file in $files
+        if test (path resolve -- "$file") = (path resolve -- "$outfile")
+            echo "Error: output '$outfile' would overwrite input '$file'." >&2
+            echo "Use -o to specify a different output filename." >&2
+            return 1
+        end
     end
 
     # --- Show plan ---
@@ -170,12 +139,12 @@ function mergid --description "Merge audio tracks from multiple video files into
         set -a ff_args -i "$file"
     end
 
-    # Map video from first file
-    set -a ff_args -map 0:v
+    # Map video and subtitles from first file
+    set -a ff_args -map 0:v -map 0:s?
 
-    # Map audio from each file
+    # Map first audio stream from each file
     for i in (seq (count $files))
-        set -a ff_args -map (math $i - 1):a
+        set -a ff_args -map (math $i - 1):a:0
     end
 
     # Copy streams without re-encoding
@@ -187,7 +156,7 @@ function mergid --description "Merge audio tracks from multiple video files into
     end
 
     # Use temp file to avoid overwriting input
-    set -l tmpfile (path change-extension '' -- $outfile)".tmp.mp4"
+    set -l tmpfile (path change-extension '' -- $outfile)".tmp"(path extension -- $outfile)
 
     set -a ff_args "$tmpfile"
 
@@ -199,7 +168,11 @@ function mergid --description "Merge audio tracks from multiple video files into
         return 1
     end
 
-    mv "$tmpfile" "$outfile"
+    if not mv "$tmpfile" "$outfile"
+        echo "Error: failed to move temp file to $outfile." >&2
+        echo "Merged file may be at: $tmpfile" >&2
+        return 1
+    end
 
     echo
     echo "Done: $outfile"

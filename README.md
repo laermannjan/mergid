@@ -27,7 +27,7 @@ mergid [OPTIONS] FILE1 FILE2 [FILE3 ...]
 | Flag | Description |
 |---|---|
 | `-l`, `--languages` | Comma-separated language codes (e.g. `de,en`) |
-| `-o`, `--output` | Output filename (default: replaces first input file) |
+| `-o`, `--output` | Output filename (default: first input with language suffix stripped) |
 | `-h`, `--help` | Show help |
 
 ### Examples
