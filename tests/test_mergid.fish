@@ -72,6 +72,26 @@ assert "video.mp4 → und"         und  (_mergid_detect_lang video.mp4)
 # No extension at all
 assert "video → und"             und  (_mergid_detect_lang video)
 
+source (status dirname)/../functions/_mergid_lang_title.fish
+
+echo
+echo "=== _mergid_lang_title ==="
+
+assert "en → English"     English    (_mergid_lang_title en)
+assert "de → Deutsch"     Deutsch    (_mergid_lang_title de)
+assert "fr → Français"    Français   (_mergid_lang_title fr)
+assert "es → Español"     Español    (_mergid_lang_title es)
+assert "it → Italiano"    Italiano   (_mergid_lang_title it)
+assert "pt → Português"   Português  (_mergid_lang_title pt)
+assert "ja → 日本語"      日本語     (_mergid_lang_title ja)
+assert "zh → 中文"        中文       (_mergid_lang_title zh)
+assert "ko → 한국어"      한국어     (_mergid_lang_title ko)
+assert "ru → Русский"     Русский    (_mergid_lang_title ru)
+assert "nl → Nederlands"  Nederlands (_mergid_lang_title nl)
+assert "pl → Polski"      Polski     (_mergid_lang_title pl)
+assert "und → und"         und        (_mergid_lang_title und)
+assert "xx → xx"           xx         (_mergid_lang_title xx)
+
 echo
 echo "=== Results ==="
 echo "$pass passed, $fail failed"
